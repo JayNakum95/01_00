@@ -123,19 +123,18 @@ Matrix4x4 Inverse(Matrix4x4& m) {
 				}
 			}
 			if (!swapped) {
-				// 逆行列が存在しない
-				return MakeIdentity4x4(); // 代替措置
+				return MakeIdentity4x4(); 
 			}
 		}
 
-		// 対角要素を1にする
+		
 		float diag = temp.m[i][i];
 		for (int k = 0; k < 4; ++k) {
 			temp.m[i][k] /= diag;
 			result.m[i][k] /= diag;
 		}
 
-		// 他の行のi列を0にする
+	
 		for (int j = 0; j < 4; ++j) {
 			if (i == j) continue;
 			float factor = temp.m[j][i];
