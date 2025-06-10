@@ -2,11 +2,14 @@
 #include <corecrt_math.h>
 #include <stdio.h>
 #include <cstdint>
+#include <cmath>
 #include <type_traits>
+#include <imgui.h>
 
 const char kWindowTitle[] = "GC2B_07_ナクム_ジェイ_ハルシュバルダン";
 const int kWindowWidth = 1280;
 const int kWindowHeight = 720;
+
 
 
 struct Vector3 {
@@ -15,7 +18,10 @@ struct Vector3 {
 struct Matrix4x4 {
 	float m[4][4];
 };
-
+struct Sphere {
+	Vector3 centre;
+	float radius;
+};
 Matrix4x4 MakePerspectiveFovMatrix(float fovY, float aspectRatio, float nearZ, float farZ) {
 	Matrix4x4 mat = {};
 	float f = 1.0f / tanf(fovY * 0.5f);
@@ -231,18 +237,93 @@ Vector3 Cross(const Vector3& v1, const Vector3& v2) {
 	result.z = v1.x * v2.y - v1.y * v2.x;
 	return result;
 }
+void DrawGrid(const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix) {
+	const float kGridHalfWidth = 2.0f;
+	const uint32_t kSubdivision = 10;
+	const float kGridEvery = (kGridHalfWidth * 2.0f) / float(kSubdivision);
+
+	for (uint32_t xIndex = 0; xIndex <= kSubdivision; ++xIndex) {
+		float x = -kGridHalfWidth + (xIndex * kGridEvery);
+		Vector3 start{ x, 0.0f, -kGridHalfWidth };
+		Vector3 end{ x, 0.0f, kGridHalfWidth };
+
+		Vector3 startScreen = Transform(Transform(start, viewProjectionMatrix), viewportMatrix);
+		Vector3 endScreen = Transform(Transform(end, viewProjectionMatrix), viewportMatrix);
+		Novice::DrawLine(
+			int(startScreen.x), int(startScreen.y), int(endScreen.x), int(endScreen.y),
+			x == 0.0f ? BLACK : 0xAAAAAAFF);
+	}
+
+	for (uint32_t zIndex = 0; zIndex <= kSubdivision; ++zIndex) {
+		float z = -kGridHalfWidth + (zIndex * kGridEvery);
+		Vector3 start{ -kGridHalfWidth, 0.0f, z };
+		Vector3 end{ kGridHalfWidth, 0.0f, z };
+
+		Vector3 startScreen = Transform(Transform(start, viewProjectionMatrix), viewportMatrix);
+		Vector3 endScreen = Transform(Transform(end, viewProjectionMatrix), viewportMatrix);
+		Novice::DrawLine(
+			int(startScreen.x), int(startScreen.y), int(endScreen.x), int(endScreen.y),
+			z == 0.0f ? BLACK : 0xAAAAAAFF);
+	}
+}
+
+void DrawSphere(
+	const Sphere& sphere, const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix,
+	uint32_t color) {
+	const float pi = 3.14159265358979323846f;
+	const uint32_t kSubdivision = 12;
+	// 経度分割1つ分の角度
+	const float kLonEvery = pi * 2.0f / float(kSubdivision);
+	// 緯度分割1つ分の角度
+	const float kLatEvery = pi / float(kSubdivision);
+
+	// 緯度の方向に分割
+	for (uint32_t latIndex = 0; latIndex < kSubdivision; ++latIndex) {
+		float lat = -pi / 2.0f + kLatEvery * latIndex;
+		// 経度の方向に分割しながら線を描く
+		for (uint32_t lonIndex = 0; lonIndex < kSubdivision; ++lonIndex) {
+			float lon = lonIndex * kLonEvery;
+
+			Vector3 a = {
+				sphere.centre.x + sphere.radius * std::cos(lat) * std::cos(lon),
+				sphere.centre.y + sphere.radius * std::sin(lat),
+				sphere.centre.z + sphere.radius * std::cos(lat) * std::sin(lon)
+			};
+
+			Vector3 b = {
+				sphere.centre.x + sphere.radius * std::cos(lat + kLatEvery) * std::cos(lon),
+				sphere.centre.y + sphere.radius * std::sin(lat + kLatEvery),
+				sphere.centre.z + sphere.radius * std::cos(lat + kLatEvery) * std::sin(lon)
+			};
+
+			Vector3 c = {
+				sphere.centre.x + sphere.radius * std::cos(lat) * std::cos(lon + kLonEvery),
+				sphere.centre.y + sphere.radius * std::sin(lat),
+				sphere.centre.z + sphere.radius * std::cos(lat) * std::sin(lon + kLonEvery)
+			};
+
+			// 線を描く
+			Vector3 screenA = Transform(Transform(a, viewProjectionMatrix), viewportMatrix);
+			Vector3 screenB = Transform(Transform(b, viewProjectionMatrix), viewportMatrix);
+			Vector3 screenC = Transform(Transform(c, viewProjectionMatrix), viewportMatrix);
+			Novice::DrawLine(int(screenA.x), int(screenA.y), int(screenB.x), int(screenB.y), color);
+			Novice::DrawLine(int(screenA.x), int(screenA.y), int(screenC.x), int(screenC.y), color);
+		}
+	}
+}
 int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	Novice::Initialize(kWindowTitle, kWindowWidth, kWindowHeight);
 
 	char keys[256] = { 0 };
 	char preKeys[256] = { 0 };
-	// Object world transform parameters
-	Vector3 translate{ 0.0f, 0.0f, 3.0f }; // Place object 3 units in front of camera
-	Vector3 rotate{ 0.0f, 0.0f, 0.0f };
+	Vector3 cameraTranslate{ 0.0f, 1.9f, -6.49f };
+	Vector3 cameraRotate{ 0.26f, 0.0f, 0.0f };
 
-	// Cross product test vectors
-	Vector3 v1{ 1.2f, -3.9f, 2.5f };
-	Vector3 v2{ 2.8f, 0.4f, -1.3f };
+	// ビュー行列を作成
+	
+	Vector3 sphereCenter = { 0.0f, 1.9f, 0.0f };
+	float sphereRadius = 1.0f;
+    Sphere sphere{ sphereCenter, sphereRadius };
 
 	while (Novice::ProcessMessage() == 0) {
 		Novice::BeginFrame();
@@ -250,69 +331,34 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		memcpy(preKeys, keys, 256);
 		Novice::GetHitKeyStateAll(keys);
 
-		if (keys[DIK_A]) { translate.x -= 0.08f; }
-		if (keys[DIK_D]) { translate.x += 0.08f; }
-		if (keys[DIK_W]) { translate.z += 0.08f; }
-		if (keys[DIK_S]) { translate.z -= 0.08f; }
-		rotate.y += 0.05f;
-		// Triangle vertices in local space
-		Vector3 kLocalVertices[3] = {
-			{ 0.0f,  0.5f, 0.0f },  // Top
-			{ 0.5f, -0.5f, 0.0f },  // Right
-			{-0.5f, -0.5f, 0.0f }   // Left
-		};
+		Matrix4x4 cameraScale{ { {1,0,0,0},{0,1,0,0},{0,0,1,0},{0,0,0,1} } };
+		Matrix4x4 cameraRotX = MakeRotationX(cameraRotate.x);
+		Matrix4x4 cameraRotY = MakeRotationY(cameraRotate.y);
+		Matrix4x4 cameraRotZ = MakeRotationZ(cameraRotate.z);
+		Matrix4x4 tempMatrix = Multiply(cameraRotZ, cameraRotX);
+		Matrix4x4 cameraRot = Multiply(tempMatrix, cameraRotY);
+		Matrix4x4 cameraTrans = MakeIdentity4x4();
+		cameraTrans.m[3][0] = -cameraTranslate.x;
+		cameraTrans.m[3][1] = -cameraTranslate.y;
+		cameraTrans.m[3][2] = -cameraTranslate.z;
+		Matrix4x4 viewMatrix = Multiply(cameraRot, cameraTrans);
 
-		// Calculate matrices
-		Matrix4x4 worldMatrix = MakeAffineMatrix(
-			{ 1.0f, 1.0f, 1.0f },  // Scale
-			rotate,              // Rotation
-			translate            // Translation
-		);
-
-		Vector3 cameraPosition{ 0.0f, 0.0f, -5.0f }; // Pull camera back to see object
-		Matrix4x4 cameraMatrix = MakeAffineMatrix(
-			{ 1.0f, 1.0f, 1.0f },  // Scale
-			{ 0.0f, 0.0f, 0.0f },  // Rotation
-			cameraPosition       // Camera position
-		);
-
-		Matrix4x4 viewMatrix = Inverse(cameraMatrix);
-		Matrix4x4 projectionMatrix = MakePerspectiveFovMatrix(
-			0.45f,
-			static_cast<float>(kWindowWidth) / static_cast<float>(kWindowHeight),
-			0.1f,
-			100.0f
-		);
-		Matrix4x4 tempMatrix = Multiply(viewMatrix, projectionMatrix);
-		Matrix4x4 worldViewProjectionMatrix = Multiply(worldMatrix, tempMatrix);
-		Matrix4x4 viewportMatrix = MakeViewPortMatrix(
-			0, 0,
-			static_cast<float>(kWindowWidth),
-			static_cast<float>(kWindowHeight),
-			0.0f, 1.0f
-		);
-		// Transform vertices from local to screen space
-		Vector3 screenVertices[3] = {};
-		for (uint32_t i = 0; i < 3; ++i) {
-			Vector3 ndcVertex = Transform(kLocalVertices[i], worldViewProjectionMatrix);
-			screenVertices[i] = Transform(ndcVertex, viewportMatrix);
-		}
+		Matrix4x4 projectionMatrix = MakePerspectiveFovMatrix(0.45f, float(kWindowWidth) / float(kWindowHeight), 0.1f, 100.0f);
+		Matrix4x4 viewProjectionMatrix = Multiply(viewMatrix, projectionMatrix);
+		Matrix4x4 viewportMatrix = MakeViewPortMatrix(0.0f, 0.0f, float(kWindowWidth), float(kWindowHeight), 0.0f, 1.0f);
+		ImGui::Begin("Window");
+		ImGui::DragFloat3("CameraTranslate",  &cameraTranslate.x, 0.01f);
+		ImGui::DragFloat3("CameraRotate", &cameraRotate.x, 0.01f);
+		ImGui::DragFloat3("sphereCenter", &sphere.centre.x,0.01f);
+		ImGui::DragFloat("sphereRadius", &sphere.radius, 0.01f);
 
 
+		// Draw grid
+		DrawGrid(viewProjectionMatrix, viewportMatrix);
 
+		// Draw sphere
+		DrawSphere(sphere, viewProjectionMatrix, viewportMatrix, 0xFF0000FF); // Red
 
-		////描画処理
-		// Draw triangle
-		Novice::DrawTriangle(
-			static_cast<int>(screenVertices[0].x), static_cast<int>(screenVertices[0].y),
-			static_cast<int>(screenVertices[1].x), static_cast<int>(screenVertices[1].y),
-			static_cast<int>(screenVertices[2].x), static_cast<int>(screenVertices[2].y),
-			RED, kFillModeSolid
-		);
-		// Cross product output
-		Vector3 cross = Cross(v1, v2);
-		Novice::ScreenPrintf(10, 10, "cross: (%.2f, %.2f, %.2f)", cross.x, cross.y, cross.z);
-		///描画処理完了
 		Novice::EndFrame();
 
 		if (preKeys[DIK_ESCAPE] == 0 && keys[DIK_ESCAPE] != 0) {
