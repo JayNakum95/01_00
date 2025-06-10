@@ -316,12 +316,12 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	char keys[256] = { 0 };
 	char preKeys[256] = { 0 };
-	Vector3 cameraTranslate{ 0.0f, 1.9f, -6.49f };
-	Vector3 cameraRotate{ 0.26f, 0.0f, 0.0f };
+	Vector3 cameraTranslate{ 0.0f, 0.0f, 6.0f };
+	Vector3 cameraRotate{ 6.0f, 0.0f, 0.0f };
 
 	// ビュー行列を作成
 	
-	Vector3 sphereCenter = { 0.0f, 1.9f, 0.0f };
+	Vector3 sphereCenter = { 0.0f, 0.0f, 0.0f };
 	float sphereRadius = 1.0f;
     Sphere sphere{ sphereCenter, sphereRadius };
 
