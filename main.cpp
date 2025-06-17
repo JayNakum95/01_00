@@ -10,8 +10,6 @@ const char kWindowTitle[] = "GC2B_07_ナクム_ジェイ_ハルシュバルダ�
 const int kWindowWidth = 1280;
 const int kWindowHeight = 720;
 
-
-
 struct Vector3 {
 	float x, y, z;
 };
@@ -19,9 +17,15 @@ struct Matrix4x4 {
 	float m[4][4];
 };
 struct Sphere {
-	Vector3 centre;
+	Vector3 center;
 	float radius;
 };
+struct Segment {
+	Vector3 origin;
+	Vector3 diff;
+};
+
+
 Matrix4x4 MakePerspectiveFovMatrix(float fovY, float aspectRatio, float nearZ, float farZ) {
 	Matrix4x4 mat = {};
 	float f = 1.0f / tanf(fovY * 0.5f);
@@ -266,6 +270,36 @@ void DrawGrid(const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMa
 			z == 0.0f ? BLACK : 0xAAAAAAFF);
 	}
 }
+Vector3 Project(const Vector3& v1, const Vector3& v2) {
+	float dotProduct = v1.x * v2.x + v1.y * v2.y + v1.z * v2.z;
+	float magnitudeSquared = v2.x * v2.x + v2.y * v2.y + v2.z * v2.z;
+	if (magnitudeSquared == 0.0f) {
+		return { 0.0f, 0.0f, 0.0f }; // Avoid division by zero
+	}
+	float scale = dotProduct / magnitudeSquared;
+	return { v2.x * scale, v2.y * scale, v2.z * scale };
+}
+Vector3 ClosestPoint(const Vector3& point, const Segment& segment) {
+	Vector3 segmentVector = { segment.diff.x - segment.origin.x, segment.diff.y - segment.origin.y, segment.diff.z - segment.origin.z };
+	Vector3 pointVector = { point.x - segment.origin.x, point.y - segment.origin.y, point.z - segment.origin.z };
+	float t = (pointVector.x * segmentVector.x + pointVector.y * segmentVector.y + pointVector.z * segmentVector.z) /
+		(segmentVector.x * segmentVector.x + segmentVector.y * segmentVector.y + segmentVector.z * segmentVector.z);
+	if (t < 0.0f) {
+		return { segment.origin.x, segment.origin.y, segment.origin.z };
+	}
+	else if (t > 1.0f) {
+		return { segment.diff.x, segment.diff.y, segment.diff.z };
+	}
+	else {
+		return { segment.origin.x + t * segmentVector.x,
+				 segment.origin.y + t * segmentVector.y,
+				 segment.origin.z + t * segmentVector.z };
+	}
+}
+	
+Vector3 SubtractVector(const Vector3& v1, const Vector3& v2) {
+	return { v1.x - v2.x, v1.y - v2.y, v1.z - v2.z };
+}
 
 void DrawSphere(
 	const Sphere& sphere, const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix,
@@ -285,21 +319,21 @@ void DrawSphere(
 			float lon = lonIndex * kLonEvery;
 
 			Vector3 a = {
-				sphere.centre.x + sphere.radius * std::cos(lat) * std::cos(lon),
-				sphere.centre.y + sphere.radius * std::sin(lat),
-				sphere.centre.z + sphere.radius * std::cos(lat) * std::sin(lon)
+				sphere.center.x + sphere.radius * std::cos(lat) * std::cos(lon),
+				sphere.center.y + sphere.radius * std::sin(lat),
+				sphere.center.z + sphere.radius * std::cos(lat) * std::sin(lon)
 			};
 
 			Vector3 b = {
-				sphere.centre.x + sphere.radius * std::cos(lat + kLatEvery) * std::cos(lon),
-				sphere.centre.y + sphere.radius * std::sin(lat + kLatEvery),
-				sphere.centre.z + sphere.radius * std::cos(lat + kLatEvery) * std::sin(lon)
+				sphere.center.x + sphere.radius * std::cos(lat + kLatEvery) * std::cos(lon),
+				sphere.center.y + sphere.radius * std::sin(lat + kLatEvery),
+				sphere.center.z + sphere.radius * std::cos(lat + kLatEvery) * std::sin(lon)
 			};
 
 			Vector3 c = {
-				sphere.centre.x + sphere.radius * std::cos(lat) * std::cos(lon + kLonEvery),
-				sphere.centre.y + sphere.radius * std::sin(lat),
-				sphere.centre.z + sphere.radius * std::cos(lat) * std::sin(lon + kLonEvery)
+				sphere.center.x + sphere.radius * std::cos(lat) * std::cos(lon + kLonEvery),
+				sphere.center.y + sphere.radius * std::sin(lat),
+				sphere.center.z + sphere.radius * std::cos(lat) * std::sin(lon + kLonEvery)
 			};
 
 			// 線を描く
@@ -316,14 +350,16 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	char keys[256] = { 0 };
 	char preKeys[256] = { 0 };
-	Vector3 cameraTranslate{ 0.0f, 0.0f, 6.0f };
-	Vector3 cameraRotate{ 6.0f, 0.0f, 0.0f };
-
+	Vector3 cameraTranslate={ 0.0f, 0.0f, 6.0f };
+	Vector3 cameraRotate={ 6.0f, 0.0f, 0.0f };
+	Segment segment={ { -2.0f, -1.0f, 0.0f }, { 3.0f, 2.0f, 2.0f } };
+	Vector3 point={ -1.5f, 0.6f, 0.6f };
+	Vector3 project = Project(SubtractVector(point,segment.origin), segment.diff);
+	Vector3 closestPoint = ClosestPoint(point, segment);
+	Sphere pointSphere{ point, 0.01f };
+	Sphere closestPointSphere{ closestPoint, 0.01f };
 	// ビュー行列を作成
 	
-	Vector3 sphereCenter = { 0.0f, 0.0f, 0.0f };
-	float sphereRadius = 1.0f;
-    Sphere sphere{ sphereCenter, sphereRadius };
 
 	while (Novice::ProcessMessage() == 0) {
 		Novice::BeginFrame();
@@ -346,11 +382,19 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		Matrix4x4 projectionMatrix = MakePerspectiveFovMatrix(0.45f, float(kWindowWidth) / float(kWindowHeight), 0.1f, 100.0f);
 		Matrix4x4 viewProjectionMatrix = Multiply(viewMatrix, projectionMatrix);
 		Matrix4x4 viewportMatrix = MakeViewPortMatrix(0.0f, 0.0f, float(kWindowWidth), float(kWindowHeight), 0.0f, 1.0f);
+		DrawSphere(pointSphere, viewProjectionMatrix, viewportMatrix, RED);
+		DrawSphere(closestPointSphere, viewProjectionMatrix, viewportMatrix, BLACK);
+		Vector3 segmentStart = Transform(Transform(segment.origin, viewProjectionMatrix), viewportMatrix);
+		Vector3 segmentEnd = Transform(Transform(segment.diff, viewProjectionMatrix), viewportMatrix);
+		Novice::DrawLine(int(segmentStart.x), int(segmentStart.y), int(segmentEnd.x), int(segmentEnd.y), WHITE);
 		ImGui::Begin("Window");
 		ImGui::DragFloat3("CameraTranslate",  &cameraTranslate.x, 0.01f);
 		ImGui::DragFloat3("CameraRotate", &cameraRotate.x, 0.01f);
-		ImGui::DragFloat3("sphereCenter", &sphere.centre.x,0.01f);
-		ImGui::DragFloat("sphereRadius", &sphere.radius, 0.01f);
+		ImGui::DragFloat3("Point", &point.x, 0.01f);
+		ImGui::DragFloat3("Segment Origin", &segment.origin.x, 0.01f);
+		ImGui::DragFloat3("Segment Diff", &segment.diff.x, 0.01f);
+		ImGui::InputFloat3("Project", &project.x, "% .3f", ImGuiInputTextFlags_ReadOnly);
+
 		ImGui::End();
 
 
@@ -358,7 +402,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		DrawGrid(viewProjectionMatrix, viewportMatrix);
 
 		// Draw sphere
-		DrawSphere(sphere, viewProjectionMatrix, viewportMatrix, 0xFF0000FF); // Red
 
 		Novice::EndFrame();
 
