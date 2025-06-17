@@ -215,6 +215,7 @@ Matrix4x4 MakeAffineMatrix(const Vector3& scale, const Vector3& rotate, const Ve
 	result.m[3][1] = translate.y;
 	result.m[3][2] = translate.z;
 
+
 	return result;
 }
 
