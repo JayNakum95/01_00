@@ -338,9 +338,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		Matrix4x4 tempMatrix = Multiply(cameraRotZ, cameraRotX);
 		Matrix4x4 cameraRot = Multiply(tempMatrix, cameraRotY);
 		Matrix4x4 cameraTrans = MakeIdentity4x4();
-		cameraTrans.m[3][0] = -cameraTranslate.x;
-		cameraTrans.m[3][1] = -cameraTranslate.y;
-		cameraTrans.m[3][2] = -cameraTranslate.z;
+		cameraTrans.m[3][0] = cameraTranslate.x;
+		cameraTrans.m[3][1] = cameraTranslate.y;
+		cameraTrans.m[3][2] = cameraTranslate.z;
 		Matrix4x4 viewMatrix = Multiply(cameraRot, cameraTrans);
 
 		Matrix4x4 projectionMatrix = MakePerspectiveFovMatrix(0.45f, float(kWindowWidth) / float(kWindowHeight), 0.1f, 100.0f);
@@ -351,6 +351,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		ImGui::DragFloat3("CameraRotate", &cameraRotate.x, 0.01f);
 		ImGui::DragFloat3("sphereCenter", &sphere.centre.x,0.01f);
 		ImGui::DragFloat("sphereRadius", &sphere.radius, 0.01f);
+		ImGui::End();
 
 
 		// Draw grid
