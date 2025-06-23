@@ -266,6 +266,7 @@ void DrawGrid(const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMa
 			z == 0.0f ? BLACK : 0xAAAAAAFF);
 	}
 }
+ 
 
 void DrawSphere(
 	const Sphere& sphere, const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix,
@@ -311,6 +312,13 @@ void DrawSphere(
 		}
 	}
 }
+float Length(const Vector3& v1, const Vector3& v2) {
+	float dx = v1.x - v2.x;
+	float dy = v1.y - v2.y;
+	float dz = v1.z - v2.z;
+	return sqrtf(dx * dx + dy * dy + dz * dz);
+}
+
 int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	Novice::Initialize(kWindowTitle, kWindowWidth, kWindowHeight);
 
@@ -321,9 +329,13 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	// ビュー行列を作成
 	
-	Vector3 sphereCenter = { 0.0f, 0.0f, 0.0f };
-	float sphereRadius = 1.0f;
-    Sphere sphere{ sphereCenter, sphereRadius };
+	Vector3 sphere1Center = { -1.0f, 0.0f, 0.0f };
+	float sphere1Radius = 1.0f;
+    Sphere sphere1{ sphere1Center, sphere1Radius };
+
+	Vector3 sphere2center = { 1.0f, 0.0f, 0.0f };
+	float sphere2Radius = 1.0f;
+	Sphere sphere2{ sphere2center, sphere2Radius };
 
 	while (Novice::ProcessMessage() == 0) {
 		Novice::BeginFrame();
@@ -346,19 +358,40 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		Matrix4x4 projectionMatrix = MakePerspectiveFovMatrix(0.45f, float(kWindowWidth) / float(kWindowHeight), 0.1f, 100.0f);
 		Matrix4x4 viewProjectionMatrix = Multiply(viewMatrix, projectionMatrix);
 		Matrix4x4 viewportMatrix = MakeViewPortMatrix(0.0f, 0.0f, float(kWindowWidth), float(kWindowHeight), 0.0f, 1.0f);
+		
+		
+
+
 		ImGui::Begin("Window");
 		ImGui::DragFloat3("CameraTranslate",  &cameraTranslate.x, 0.01f);
 		ImGui::DragFloat3("CameraRotate", &cameraRotate.x, 0.01f);
-		ImGui::DragFloat3("sphereCenter", &sphere.centre.x,0.01f);
-		ImGui::DragFloat("sphereRadius", &sphere.radius, 0.01f);
+		ImGui::DragFloat3("sphereCenter", &sphere1.centre.x,0.01f);
+		ImGui::DragFloat("sphereRadius", &sphere1.radius, 0.01f);
+		ImGui::DragFloat3("sphere2Center", &sphere2.centre.x, 0.01f);
+		ImGui::DragFloat("sphere2Radius", &sphere2.radius, 0.01f);
 		ImGui::End();
 
 
+        // Add a function to calculate the length between two Vector3 points
+       
+
+        // Replace the problematic line with the correct function call
+        float distance = (float)Length(sphere1.centre, sphere2.centre);
 		// Draw grid
 		DrawGrid(viewProjectionMatrix, viewportMatrix);
 
 		// Draw sphere
-		DrawSphere(sphere, viewProjectionMatrix, viewportMatrix, 0xFF0000FF); // Red
+		if (distance < sphere1.radius + sphere2.radius) {
+			// Collision detected
+			DrawSphere(sphere1, viewProjectionMatrix, viewportMatrix, RED); 
+			DrawSphere(sphere2, viewProjectionMatrix, viewportMatrix, GREEN); 
+		}
+		else {
+			// No collision
+			DrawSphere(sphere1, viewProjectionMatrix, viewportMatrix, WHITE);
+			DrawSphere(sphere2, viewProjectionMatrix, viewportMatrix, WHITE);
+		}
+		
 
 		Novice::EndFrame();
 
