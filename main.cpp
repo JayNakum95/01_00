@@ -281,7 +281,7 @@ void DrawSphere(
 	// 緯度の方向に分割
 	for (uint32_t latIndex = 0; latIndex < kSubdivision; ++latIndex) {
 		float lat = -pi / 2.0f + kLatEvery * latIndex;
-		// 経度の方向に分割しながら線を描く
+		
 		for (uint32_t lonIndex = 0; lonIndex < kSubdivision; ++lonIndex) {
 			float lon = lonIndex * kLonEvery;
 
@@ -321,11 +321,15 @@ float Length(const Vector3& v1, const Vector3& v2) {
 
 int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	Novice::Initialize(kWindowTitle, kWindowWidth, kWindowHeight);
-
 	char keys[256] = { 0 };
 	char preKeys[256] = { 0 };
 	Vector3 cameraTranslate{ 0.0f, 0.0f, 6.0f };
 	Vector3 cameraRotate{ 6.0f, 0.0f, 0.0f };
+	bool isDragging = false;
+	bool isRightDragging = false;
+    int lastMouseX = 0, lastMouseY = 0;
+	int wheel = 0; // マウスホイールの値	
+	
 
 	// ビュー行列を作成
 	
@@ -361,10 +365,51 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		
 		
 
+		int mouseX, mouseY;
+		Novice::GetMousePosition(&mouseX, &mouseY);
 
+		int mouseL = Novice::IsPressMouse(2); // mouse button 2(middle mouse button)
+
+		if (mouseL && !isDragging) {
+			isDragging = true;
+			lastMouseX = mouseX;
+			lastMouseY = mouseY;
+		}
+		else if (!mouseL && isDragging) {
+			isDragging = false;
+		}
+
+		if (isDragging) {
+			int dx = mouseX - lastMouseX;
+			int dy = mouseY - lastMouseY;
+			cameraRotate.y += dx * 0.01f;
+			cameraRotate.x += dy * 0.01f;
+			lastMouseX = mouseX;
+			lastMouseY = mouseY;
+		}
+		int mouseR = Novice::IsPressMouse(1); // 1: right button
+		if (mouseR && !isRightDragging) {
+			isRightDragging = true;
+			lastMouseX = mouseX;
+			lastMouseY = mouseY;
+		}
+		else if (!mouseR && isRightDragging) {
+			isRightDragging = false;
+		}
+		if (isRightDragging) {
+			int dx = mouseX - lastMouseX;
+			int dy = mouseY - lastMouseY;
+			cameraTranslate.x -= dx * 0.01f;
+			cameraTranslate.y += dy * 0.01f; // Y軸は逆方向に動かす
+			lastMouseX = mouseX;
+			lastMouseY = mouseY;
+		}
+		wheel += Novice::GetWheel();
+		if (wheel != 0) {
+			cameraTranslate.z += wheel * 0.1f; // ホイールの値に応じてカメラのZ位置を調整
+			wheel = 0; // ホイールの値をリセット
+		}
 		ImGui::Begin("Window");
-		ImGui::DragFloat3("CameraTranslate",  &cameraTranslate.x, 0.01f);
-		ImGui::DragFloat3("CameraRotate", &cameraRotate.x, 0.01f);
 		ImGui::DragFloat3("sphereCenter", &sphere1.centre.x,0.01f);
 		ImGui::DragFloat("sphereRadius", &sphere1.radius, 0.01f);
 		ImGui::DragFloat3("sphere2Center", &sphere2.centre.x, 0.01f);
