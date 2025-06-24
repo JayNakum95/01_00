@@ -417,7 +417,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		ImGui::End();
 
 
-        // Add a function to calculate the length between two Vector3 points
        
 
         // Replace the problematic line with the correct function call
