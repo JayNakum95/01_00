@@ -353,42 +353,38 @@ Vector3 Normalize(const Vector3& v) {
 }
 
 void DrawPlane(const Plane& plane, const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix, uint32_t color) {
-	Vector3 normal = Normalize(plane.normal);
-	Vector3 center = Multiply(plane.distance, normal);
+	Vector3 center = Multiply(plane.distance, plane.normal);
+	Vector3 perpendiculars[4];
+	perpendiculars[0] = Normalize(Perpendicular(plane.normal));
+	perpendiculars[1] = { -perpendiculars[0].x, -perpendiculars[0].y, -perpendiculars[0].z };
+	perpendiculars[2] = Cross(plane.normal, perpendiculars[0]);
+	perpendiculars[3] = { -perpendiculars[2].x, -perpendiculars[2].y, -perpendiculars[2].z };
 
-	Vector3 arbitrary;
-	if (fabs(normal.y) < 0.999f) {
-		arbitrary = { 0.0f, 1.0f, 0.0f };
+	Vector3 points[4];
+	const float kPlaneSize = 2.0f;
+	for (int32_t index = 0; index < 4; ++index) {
+		Vector3 extend = Multiply(kPlaneSize, perpendiculars[index]);
+		Vector3 point = Add(center, extend);
+		points[index] = Transform(Transform(point, viewProjectionMatrix), viewportMatrix);
 	}
-	else {
-		arbitrary = { 1.0f, 0.0f, 0.0f };
-	}
 
-	Vector3 basis1 = Normalize(Cross(arbitrary, normal));
-	Vector3 basis2 = Cross(normal, basis1);
+    // Draw rectangle (plane) by connecting the 4 points
+	Novice::DrawLine(
+		static_cast<int>(points[0].x), static_cast<int>(points[0].y),
+		static_cast<int>(points[2].x), static_cast<int>(points[2].y), color);
+	Novice::DrawLine(
+		static_cast<int>(points[1].x), static_cast<int>(points[1].y),
+		static_cast<int>(points[2].x), static_cast<int>(points[2].y), color);
+	Novice::DrawLine(
+		static_cast<int>(points[1].x), static_cast<int>(points[1].y),
+		static_cast<int>(points[3].x), static_cast<int>(points[3].y), color);
+	Novice::DrawLine(
+		static_cast<int>(points[3].x), static_cast<int>(points[3].y),
+		static_cast<int>(points[0].x), static_cast<int>(points[0].y), color);
 
-	// Plane half-size
-	float halfSize = 2.0f;
-
-	// Define 4 corners of the plane in 3D
-	Vector3 corners[4];
-	corners[0] = Add(Add(center, Multiply(+halfSize, basis1)), Multiply(+halfSize, basis2));
-	corners[1] = Add(Add(center, Multiply(-halfSize, basis1)), Multiply(+halfSize, basis2));
-	corners[2] = Add(Add(center, Multiply(-halfSize, basis1)), Multiply(-halfSize, basis2));
-	corners[3] = Add(Add(center, Multiply(+halfSize, basis1)), Multiply(-halfSize, basis2));
-
-	// Draw lines between corners
-	for (int i = 0; i < 4; ++i) {
-		Vector3 screenA = Transform(Transform(corners[i], viewProjectionMatrix), viewportMatrix);
-		Vector3 screenB = Transform(Transform(corners[(i + 1) % 4], viewProjectionMatrix), viewportMatrix);
-		Novice::DrawLine(
-			int(screenA.x), int(screenA.y),
-			int(screenB.x), int(screenB.y),
-			color
-		);
-	}
+    
+    
 }
-
 
 
 bool IsSpherePlaneColliding(const Sphere& sphere, const Plane& plane) {
