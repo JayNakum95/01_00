@@ -22,6 +22,10 @@ struct Sphere {
 	Vector3 centre;
 	float radius;
 };
+struct Plane {
+	Vector3 normal;
+	float distance;
+};
 Matrix4x4 MakePerspectiveFovMatrix(float fovY, float aspectRatio, float nearZ, float farZ) {
 	Matrix4x4 mat = {};
 	float f = 1.0f / tanf(fovY * 0.5f);
@@ -128,18 +132,18 @@ Matrix4x4 Inverse(Matrix4x4& m) {
 				}
 			}
 			if (!swapped) {
-				return MakeIdentity4x4(); 
+				return MakeIdentity4x4();
 			}
 		}
 
-		
+
 		float diag = temp.m[i][i];
 		for (int k = 0; k < 4; ++k) {
 			temp.m[i][k] /= diag;
 			result.m[i][k] /= diag;
 		}
 
-	
+
 		for (int j = 0; j < 4; ++j) {
 			if (i == j) continue;
 			float factor = temp.m[j][i];
@@ -266,9 +270,12 @@ void DrawGrid(const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMa
 			z == 0.0f ? BLACK : 0xAAAAAAFF);
 	}
 }
- 
+float Dot(const Vector3& v1, const Vector3& v2) {
+	return v1.x * v2.x + v1.y * v2.y + v1.z * v2.z;
+}
 
 void DrawSphere(
+
 	const Sphere& sphere, const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix,
 	uint32_t color) {
 	const float pi = 3.14159265358979323846f;
@@ -281,7 +288,7 @@ void DrawSphere(
 	// 緯度の方向に分割
 	for (uint32_t latIndex = 0; latIndex < kSubdivision; ++latIndex) {
 		float lat = -pi / 2.0f + kLatEvery * latIndex;
-		
+
 		for (uint32_t lonIndex = 0; lonIndex < kSubdivision; ++lonIndex) {
 			float lon = lonIndex * kLonEvery;
 
@@ -318,6 +325,89 @@ float Length(const Vector3& v1, const Vector3& v2) {
 	float dz = v1.z - v2.z;
 	return sqrtf(dx * dx + dy * dy + dz * dz);
 }
+Vector3 Perpendicular(const Vector3& v1) {
+	if (v1.x != 0.0f || v1.y != 0.0f) {
+		return { -v1.y, v1.x, 0.0f }; // XY平面上での垂直ベクトル
+	}
+	return { 0.0f, -v1.z,v1.y }; // Z軸方向のベクトル
+}
+
+
+// Helper: Scalar * Vector3
+Vector3 Multiply(float scalar, const Vector3& v) {
+	return { scalar * v.x, scalar * v.y, scalar * v.z };
+}
+
+// Helper: Vector3 + Vector3
+Vector3 Add(const Vector3& v1, const Vector3& v2) {
+	return { v1.x + v2.x, v1.y + v2.y, v1.z + v2.z };
+}
+
+// Helper: Normalize Vector3
+Vector3 Normalize(const Vector3& v) {
+	float len = sqrtf(v.x * v.x + v.y * v.y + v.z * v.z);
+	if (len > 1e-6f) {
+		return { v.x / len, v.y / len, v.z / len };
+	}
+	return { 0.0f, 0.0f, 0.0f };
+}
+
+void DrawPlane(const Plane& plane, const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix, uint32_t color) {
+	Vector3 normal = Normalize(plane.normal);
+	Vector3 center = Multiply(plane.distance, normal);
+
+	Vector3 arbitrary;
+	if (fabs(normal.y) < 0.999f) {
+		arbitrary = { 0.0f, 1.0f, 0.0f };
+	}
+	else {
+		arbitrary = { 1.0f, 0.0f, 0.0f };
+	}
+
+	Vector3 basis1 = Normalize(Cross(arbitrary, normal));
+	Vector3 basis2 = Cross(normal, basis1);
+
+	// Plane half-size
+	float halfSize = 2.0f;
+
+	// Define 4 corners of the plane in 3D
+	Vector3 corners[4];
+	corners[0] = Add(Add(center, Multiply(+halfSize, basis1)), Multiply(+halfSize, basis2));
+	corners[1] = Add(Add(center, Multiply(-halfSize, basis1)), Multiply(+halfSize, basis2));
+	corners[2] = Add(Add(center, Multiply(-halfSize, basis1)), Multiply(-halfSize, basis2));
+	corners[3] = Add(Add(center, Multiply(+halfSize, basis1)), Multiply(-halfSize, basis2));
+
+	// Draw lines between corners
+	for (int i = 0; i < 4; ++i) {
+		Vector3 screenA = Transform(Transform(corners[i], viewProjectionMatrix), viewportMatrix);
+		Vector3 screenB = Transform(Transform(corners[(i + 1) % 4], viewProjectionMatrix), viewportMatrix);
+		Novice::DrawLine(
+			int(screenA.x), int(screenA.y),
+			int(screenB.x), int(screenB.y),
+			color
+		);
+	}
+}
+
+
+
+bool IsSpherePlaneColliding(const Sphere& sphere, const Plane& plane) {
+	float len = sqrtf(plane.normal.x * plane.normal.x +
+		plane.normal.y * plane.normal.y +
+		plane.normal.z * plane.normal.z);
+
+	if (len < 1e-6f) return false;  // Degenerate normal
+
+	Vector3 normalizedNormal = {
+		plane.normal.x / len,
+		plane.normal.y / len,
+		plane.normal.z / len
+	};
+
+	float signedDistance = Dot(normalizedNormal, sphere.centre) - plane.distance;
+	return fabsf(signedDistance) <= sphere.radius;
+}
+
 
 int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	Novice::Initialize(kWindowTitle, kWindowWidth, kWindowHeight);
@@ -327,19 +417,20 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	Vector3 cameraRotate{ 6.0f, 0.0f, 0.0f };
 	bool isDragging = false;
 	bool isRightDragging = false;
-    int lastMouseX = 0, lastMouseY = 0;
+	int lastMouseX = 0, lastMouseY = 0;
 	int wheel = 0; // マウスホイールの値	
-	
+
 
 	// ビュー行列を作成
-	
+
 	Vector3 sphere1Center = { -1.0f, 0.0f, 0.0f };
 	float sphere1Radius = 1.0f;
-    Sphere sphere1{ sphere1Center, sphere1Radius };
+	Sphere sphere1{ sphere1Center, sphere1Radius };
 
-	Vector3 sphere2center = { 1.0f, 0.0f, 0.0f };
-	float sphere2Radius = 1.0f;
-	Sphere sphere2{ sphere2center, sphere2Radius };
+	Vector3 planeNormal = { 0.0f, 1.0f, 0.0f };
+	float planeDistance = 0.0f; // 平面の原点からの距離
+	Plane plane{ planeNormal, planeDistance };
+
 
 	while (Novice::ProcessMessage() == 0) {
 		Novice::BeginFrame();
@@ -362,8 +453,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		Matrix4x4 projectionMatrix = MakePerspectiveFovMatrix(0.45f, float(kWindowWidth) / float(kWindowHeight), 0.1f, 100.0f);
 		Matrix4x4 viewProjectionMatrix = Multiply(viewMatrix, projectionMatrix);
 		Matrix4x4 viewportMatrix = MakeViewPortMatrix(0.0f, 0.0f, float(kWindowWidth), float(kWindowHeight), 0.0f, 1.0f);
-		
-		
+
+
 
 		int mouseX, mouseY;
 		Novice::GetMousePosition(&mouseX, &mouseY);
@@ -406,36 +497,35 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		}
 		wheel += Novice::GetWheel();
 		if (wheel != 0) {
-			cameraTranslate.z += wheel * 0.1f; // ホイールの値に応じてカメラのZ位置を調整
-			wheel = 0; // ホイールの値をリセット
+			cameraTranslate.z += wheel * 0.1f; 
+			wheel = 0; 
 		}
+
+
+
 		ImGui::Begin("Window");
-		ImGui::DragFloat3("sphereCenter", &sphere1.centre.x,0.01f);
+		ImGui::DragFloat3("sphereCenter", &sphere1.centre.x, 0.01f);
 		ImGui::DragFloat("sphereRadius", &sphere1.radius, 0.01f);
-		ImGui::DragFloat3("sphere2Center", &sphere2.centre.x, 0.01f);
-		ImGui::DragFloat("sphere2Radius", &sphere2.radius, 0.01f);
+		ImGui::DragFloat3("planeNormal", &plane.normal.x, 0.01f);
+		plane.normal = Normalize(plane.normal);
+
+		ImGui::DragFloat("planeDistance", &plane.distance, 0.01f);
 		ImGui::End();
 
 
-       
 
-        // Replace the problematic line with the correct function call
-        float distance = (float)Length(sphere1.centre, sphere2.centre);
-		// Draw grid
+
 		DrawGrid(viewProjectionMatrix, viewportMatrix);
 
-		// Draw sphere
-		if (distance < sphere1.radius + sphere2.radius) {
-			// Collision detected
-			DrawSphere(sphere1, viewProjectionMatrix, viewportMatrix, RED); 
-			DrawSphere(sphere2, viewProjectionMatrix, viewportMatrix, GREEN); 
+		DrawPlane(plane, viewProjectionMatrix, viewportMatrix, 0x00FF00FF);
+		if (IsSpherePlaneColliding(sphere1, plane)) {
+			DrawSphere(sphere1, viewProjectionMatrix, viewportMatrix, 0xFF0000FF);
 		}
 		else {
-			// No collision
-			DrawSphere(sphere1, viewProjectionMatrix, viewportMatrix, WHITE);
-			DrawSphere(sphere2, viewProjectionMatrix, viewportMatrix, WHITE);
+			DrawSphere(sphere1, viewProjectionMatrix, viewportMatrix, 0x00FF00FF);
 		}
-		
+
+
 
 		Novice::EndFrame();
 
