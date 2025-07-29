@@ -24,10 +24,8 @@ struct AABB {
 	Vector3 min; // 最小点
 	Vector3 max; // 最大点
 };
-struct Sphere {
-	Vector3 centre;
-	float radius;
-};
+
+
 Matrix4x4 MakePerspectiveFovMatrix(float fovY, float aspectRatio, float nearZ, float farZ) {
 	Matrix4x4 mat = {};
 	float f = 1.0f / tanf(fovY * 0.5f);
@@ -311,237 +309,230 @@ Vector3 Normalize(const Vector3& v) {
 }
 
 
-void DrawSphere(
 
-	const Sphere& sphere, const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix,
-	uint32_t color) {
-	const float pi = 3.14159265358979323846f;
-	const uint32_t kSubdivision = 12;
-	// 経度分割1つ分の角度
-	const float kLonEvery = pi * 2.0f / float(kSubdivision);
-	// 緯度分割1つ分の角度
-	const float kLatEvery = pi / float(kSubdivision);
+struct Plane {
+	Vector3 normal;
+	float distance;
+};
 
-	// 緯度の方向に分割
-	for (uint32_t latIndex = 0; latIndex < kSubdivision; ++latIndex) {
-		float lat = -pi / 2.0f + kLatEvery * latIndex;
+struct Segment {
+	Vector3 origin; // 線の始点
+	Vector3 diff;   // 線の方向ベクトル
+	static constexpr float kTMin = 0.0f; // 線の始点に対応するt値
+	static constexpr float kTMax = 1.0f; // 線の終点に対応するt値
+};
 
-		for (uint32_t lonIndex = 0; lonIndex < kSubdivision; ++lonIndex) {
-			float lon = lonIndex * kLonEvery;
-
-			Vector3 a = {
-				sphere.centre.x + sphere.radius * std::cos(lat) * std::cos(lon),
-				sphere.centre.y + sphere.radius * std::sin(lat),
-				sphere.centre.z + sphere.radius * std::cos(lat) * std::sin(lon)
-			};
-
-			Vector3 b = {
-				sphere.centre.x + sphere.radius * std::cos(lat + kLatEvery) * std::cos(lon),
-				sphere.centre.y + sphere.radius * std::sin(lat + kLatEvery),
-				sphere.centre.z + sphere.radius * std::cos(lat + kLatEvery) * std::sin(lon)
-			};
-
-			Vector3 c = {
-				sphere.centre.x + sphere.radius * std::cos(lat) * std::cos(lon + kLonEvery),
-				sphere.centre.y + sphere.radius * std::sin(lat),
-				sphere.centre.z + sphere.radius * std::cos(lat) * std::sin(lon + kLonEvery)
-			};
-
-			// 線を描く
-			Vector3 screenA = Transform(Transform(a, viewProjectionMatrix), viewportMatrix);
-			Vector3 screenB = Transform(Transform(b, viewProjectionMatrix), viewportMatrix);
-			Vector3 screenC = Transform(Transform(c, viewProjectionMatrix), viewportMatrix);
-			Novice::DrawLine(int(screenA.x), int(screenA.y), int(screenB.x), int(screenB.y), color);
-			Novice::DrawLine(int(screenA.x), int(screenA.y), int(screenC.x), int(screenC.y), color);
-		}
-	}
+// Overload Subtract for Vector3
+Vector3 Subtract(const Vector3& v1, const Vector3& v2) {
+	return { v1.x - v2.x, v1.y - v2.y, v1.z - v2.z };
 }
 
- // Define Triangle and Plane types
+void DrawAABB(const AABB& aabb, const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix, uint32_t color) {
+	// AABBを構成する8頂点を作る
+	Vector3 vertices[8] = {
+		{aabb.min.x, aabb.min.y, aabb.min.z},
+		{aabb.min.x, aabb.max.y, aabb.min.z},
+		{aabb.min.x, aabb.max.y, aabb.max.z},
+		{aabb.min.x, aabb.min.y, aabb.max.z},
+		{aabb.max.x, aabb.min.y, aabb.min.z},
+		{aabb.max.x, aabb.max.y, aabb.min.z},
+		{aabb.max.x, aabb.max.y, aabb.max.z},
+		{aabb.max.x, aabb.min.y, aabb.max.z},
 
+	};
 
- struct Plane {
-     Vector3 normal;
-     float distance;
- };
+	// スクリーン座標系へ変換
+	Vector3 screenVertices[8];
+	for (uint32_t index = 0; index < 8; ++index) {
+		screenVertices[index] = Transform(Transform(vertices[index], viewProjectionMatrix), viewportMatrix);
+	}
 
- // Define Line type and constants
+	// 線を繋いで描画
+	const uint32_t indices[12][2] = {
+		{0, 1},
+		{1, 2},
+		{2, 3},
+		{3, 0},
+		{4, 5},
+		{5, 6},
+		{6, 7},
+		{7, 4},
+		{0, 4},
+		{1, 5},
+		{2, 6},
+		{3, 7},
+	};
 
+	for (uint32_t i = 0; i < 12; ++i) {
+		Novice::DrawLine(
+			int(screenVertices[indices[i][0]].x), int(screenVertices[indices[i][0]].y),
+			int(screenVertices[indices[i][1]].x), int(screenVertices[indices[i][1]].y),
+			color
+		);
+	}
+}
+ 
 
- // Overload Subtract for Vector3
- Vector3 Subtract(const Vector3& v1, const Vector3& v2) {
-     return { v1.x - v2.x, v1.y - v2.y, v1.z - v2.z };
- }
+template<typename tLine>
+bool isCollision(const AABB& aabb, const tLine& line) {
+	Vector3 mins;
+	mins.x = (aabb.min.x - line.origin.x) / line.diff.x;
+	mins.y = (aabb.min.y - line.origin.y) / line.diff.y;
+	mins.z = (aabb.min.z - line.origin.z) / line.diff.z;
+	Vector3 maxes;
+	maxes.x = (aabb.max.x - line.origin.x) / line.diff.x;
+	maxes.y = (aabb.max.y - line.origin.y) / line.diff.y;
+	maxes.z = (aabb.max.z - line.origin.z) / line.diff.z;
 
- void DrawAABB(const AABB& aabb, const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix, uint32_t color) {
-     // AABBを構成する8頂点を作る
-     Vector3 vertices[8] = {
-         {aabb.min.x, aabb.min.y, aabb.min.z},
-         {aabb.min.x, aabb.max.y, aabb.min.z},
-         {aabb.min.x, aabb.max.y, aabb.max.z},
-         {aabb.min.x, aabb.min.y, aabb.max.z},
-         {aabb.max.x, aabb.min.y, aabb.min.z},
-         {aabb.max.x, aabb.max.y, aabb.min.z},
-         {aabb.max.x, aabb.max.y, aabb.max.z},
-         {aabb.max.x, aabb.min.y, aabb.max.z},
-       
-     };
+	Vector3 nears;
+	nears.x = (std::min)(mins.x, maxes.x);
+	nears.y = (std::min)(mins.y, maxes.y);
+	nears.z = (std::min)(mins.z, maxes.z);
 
-     // スクリーン座標系へ変換
-     Vector3 screenVertices[8];
-     for (uint32_t index = 0; index < 8; ++index) {
-         screenVertices[index] = Transform(Transform(vertices[index], viewProjectionMatrix), viewportMatrix);
-     }
+	Vector3 fars;
+	fars.x = (std::max)(mins.x, maxes.x);
+	fars.y = (std::max)(mins.y, maxes.y);
+	fars.z = (std::max)(mins.z, maxes.z);
 
-     // 線を繋いで描画
-     const uint32_t indices[12][2] = {
-         {0, 1},
-         {1, 2},
-         {2, 3},
-         {3, 0},
-         {4, 5},
-         {5, 6},
-         {6, 7},
-         {7, 4},
-         {0, 4},
-         {1, 5},
-         {2, 6},
-         {3, 7},
-     };
+	float tMin = (std::max)(nears.x, (std::max)(nears.y, nears.z));
+	float tMax = (std::min)(fars.x, (std::min)(fars.y, fars.z));
 
-     for (uint32_t i = 0; i < 12; ++i) {
-         Novice::DrawLine(
-             int(screenVertices[indices[i][0]].x), int(screenVertices[indices[i][0]].y),
-             int(screenVertices[indices[i][1]].x), int(screenVertices[indices[i][1]].y),
-             color
-         );
-     }
- }
- bool isCollision(const Sphere& sphere, const AABB& aabb) {
-
-	 bool IsCollision(const AABB & aabb, const Sphere & sphere);
-	 Vector3 closestPoint = {
-		 std::clamp(sphere.centre.x, aabb.min.x, aabb.max.x),
-		 std::clamp(sphere.centre.y, aabb.min.y, aabb.max.y),
-		 std::clamp(sphere.centre.z, aabb.min.z, aabb.max.z)
-	 };
-	 float distance = Length(sphere.centre, closestPoint);
-	 return distance <= sphere.radius;
- }
+	if (tMin <= tMax) {
+		if ((tMin * tMax) < 0.0f) {
+			return true;
+		}
+		if (
+			(tLine::kTMin <= tMin && tMin <= tLine::kTMax) ||
+			(tLine::kTMin <= tMax && tMax <= tLine::kTMax)) {
+			return true;
+		}
+	}
+	return false;
+}
+void DrawSegment(const Segment& segment, const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix, uint32_t color) {
+	Vector3 start = Transform(segment.origin, viewProjectionMatrix);
+	Vector3 end = Transform(Add(segment.origin, segment.diff), viewProjectionMatrix);
+	start = Transform(start, viewportMatrix);
+	end = Transform(end, viewportMatrix);
+	Novice::DrawLine(
+		int(start.x), int(start.y),
+		int(end.x), int(end.y),
+		color
+	);
+}
  int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
-	Novice::Initialize(kWindowTitle, kWindowWidth, kWindowHeight);
-	char keys[256] = { 0 };
-	char preKeys[256] = { 0 };
-	Vector3 cameraTranslate{ 0.0f, 0.0f, 6.0f };
-	Vector3 cameraRotate{ 6.0f, 0.0f, 0.0f };
-	bool isDragging = false;
-	bool isRightDragging = false;
-	int lastMouseX = 0, lastMouseY = 0;
+	 Novice::Initialize(kWindowTitle, kWindowWidth, kWindowHeight);
+	 char keys[256] = { 0 };
+	 char preKeys[256] = { 0 };
+	 Vector3 cameraTranslate{ 0.0f, 0.0f, 6.0f };
+	 Vector3 cameraRotate{ 6.0f, 0.0f, 0.0f };
+	 bool isDragging = false;
+	 bool isRightDragging = false;
+	 int lastMouseX = 0, lastMouseY = 0;
 
 
-	// ビュー行列を作成
-
-	
-	AABB aabb1 = { {-0.5f,-0.5f,-0.5f} ,{0.0f,0.0f,0.0f} };
-	Vector3 center1 = { 0.0f, 0.0f, 0.0f };
-	float radius1 = 0.5f;
-
-	Sphere sphere1 = {center1,radius1 };
-
-	while (Novice::ProcessMessage() == 0) {
-		Novice::BeginFrame();
-
-		memcpy(preKeys, keys, 256);
-		Novice::GetHitKeyStateAll(keys);
-
-		Matrix4x4 cameraScale{ { {1,0,0,0},{0,1,0,0},{0,0,1,0},{0,0,0,1} } };
-		Matrix4x4 cameraRotX = MakeRotationX(cameraRotate.x);
-		Matrix4x4 cameraRotY = MakeRotationY(cameraRotate.y);
-		Matrix4x4 cameraRotZ = MakeRotationZ(cameraRotate.z);
-		Matrix4x4 tempMatrix = Multiply(cameraRotZ, cameraRotX);
-		Matrix4x4 cameraRot = Multiply(tempMatrix, cameraRotY);
-		Matrix4x4 cameraTrans = MakeIdentity4x4();
-		cameraTrans.m[3][0] = cameraTranslate.x;
-		cameraTrans.m[3][1] = cameraTranslate.y;
-		cameraTrans.m[3][2] = cameraTranslate.z;
-		Matrix4x4 viewMatrix = Multiply(cameraRot, cameraTrans);
-
-		Matrix4x4 projectionMatrix = MakePerspectiveFovMatrix(0.45f, float(kWindowWidth) / float(kWindowHeight), 0.1f, 100.0f);
-		Matrix4x4 viewProjectionMatrix = Multiply(viewMatrix, projectionMatrix);
-		Matrix4x4 viewportMatrix = MakeViewPortMatrix(0.0f, 0.0f, float(kWindowWidth), float(kWindowHeight), 0.0f, 1.0f);
+	 // ビュー行列を作成
 
 
+	 AABB aabb1 = { {-0.5f,-0.5f,-0.5f} ,{0.0f,0.0f,0.0f} };
+	 Vector3 origin{ 0.0f, 0.0f, 0.0f };
+	 Vector3 diff{ 1.0f, 1.0f, 1.0f }; // 線の方向ベクトル
+	 Segment line={origin,diff};
+    
+	 while (Novice::ProcessMessage() == 0) {
+		 Novice::BeginFrame();
 
-		int mouseX, mouseY;
-		Novice::GetMousePosition(&mouseX, &mouseY);
+		 memcpy(preKeys, keys, 256);
+		 Novice::GetHitKeyStateAll(keys);
 
-		int mouseL = Novice::IsPressMouse(2); // mouse button 2(middle mouse button)
+		 Matrix4x4 cameraScale{ { {1,0,0,0},{0,1,0,0},{0,0,1,0},{0,0,0,1} } };
+		 Matrix4x4 cameraRotX = MakeRotationX(cameraRotate.x);
+		 Matrix4x4 cameraRotY = MakeRotationY(cameraRotate.y);
+		 Matrix4x4 cameraRotZ = MakeRotationZ(cameraRotate.z);
+		 Matrix4x4 tempMatrix = Multiply(cameraRotZ, cameraRotX);
+		 Matrix4x4 cameraRot = Multiply(tempMatrix, cameraRotY);
+		 Matrix4x4 cameraTrans = MakeIdentity4x4();
+		 cameraTrans.m[3][0] = cameraTranslate.x;
+		 cameraTrans.m[3][1] = cameraTranslate.y;
+		 cameraTrans.m[3][2] = cameraTranslate.z;
+		 Matrix4x4 viewMatrix = Multiply(cameraRot, cameraTrans);
 
-		if (mouseL && !isDragging) {
-			isDragging = true;
-			lastMouseX = mouseX;
-			lastMouseY = mouseY;
-		}
-		else if (!mouseL && isDragging) {
-			isDragging = false;
-		}
+		 Matrix4x4 projectionMatrix = MakePerspectiveFovMatrix(0.45f, float(kWindowWidth) / float(kWindowHeight), 0.1f, 100.0f);
+		 Matrix4x4 viewProjectionMatrix = Multiply(viewMatrix, projectionMatrix);
+		 Matrix4x4 viewportMatrix = MakeViewPortMatrix(0.0f, 0.0f, float(kWindowWidth), float(kWindowHeight), 0.0f, 1.0f);
 
-		if (isDragging) {
-			int dx = mouseX - lastMouseX;
-			int dy = mouseY - lastMouseY;
-			cameraRotate.y += dx * 0.01f;
-			cameraRotate.x += dy * 0.01f;
-			lastMouseX = mouseX;
-			lastMouseY = mouseY;
-		}
-		int mouseR = Novice::IsPressMouse(1); // 1: right button
-		if (mouseR && !isRightDragging) {
-			isRightDragging = true;
-			lastMouseX = mouseX;
-			lastMouseY = mouseY;
-		}
-		else if (!mouseR && isRightDragging) {
-			isRightDragging = false;
-		}
-		if (isRightDragging) {
-			int dx = mouseX - lastMouseX;
-			int dy = mouseY - lastMouseY;
-			cameraTranslate.x -= dx * 0.01f;
-			cameraTranslate.y += dy * 0.01f; // Y軸は逆方向に動かす
-			lastMouseX = mouseX;
-			lastMouseY = mouseY;
-		}
 
-		int32_t color = isCollision(sphere1,aabb1) ? RED : GREEN;
 
-		ImGui::Begin("Window");
-		ImGui::DragFloat3("aabb1 min", &aabb1.min.x, 0.01f);
-		ImGui::DragFloat3("aabb1 max", &aabb1.max.x, 0.01f);
-		ImGui::DragFloat3("sphere1 centre", &sphere1.centre.x, 0.01f);
-		ImGui::DragFloat("sphere1 radius", &sphere1.radius, 0.01f);
-			
-		ImGui::End();
-		aabb1.min.x = (std::min)(aabb1.min.x, aabb1.max.x);
-		aabb1.min.y = (std::min)(aabb1.min.y, aabb1.max.y);
-		aabb1.min.z = (std::min)(aabb1.min.z, aabb1.max.z);
-		aabb1.max.x = (std::max)(aabb1.min.x, aabb1.max.x);
-		aabb1.max.y = (std::max)(aabb1.min.y, aabb1.max.y);
-		aabb1.max.z = (std::max)(aabb1.min.z, aabb1.max.z);
-	
-		DrawGrid(viewProjectionMatrix, viewportMatrix);
-		DrawAABB(aabb1, viewProjectionMatrix, viewportMatrix, color);
-		DrawSphere(sphere1, viewProjectionMatrix, viewportMatrix, WHITE);
+		 int mouseX, mouseY;
+		 Novice::GetMousePosition(&mouseX, &mouseY);
+
+		 int mouseL = Novice::IsPressMouse(2); // mouse button 2(middle mouse button)
+
+		 if (mouseL && !isDragging) {
+			 isDragging = true;
+			 lastMouseX = mouseX;
+			 lastMouseY = mouseY;
+		 }
+		 else if (!mouseL && isDragging) {
+			 isDragging = false;
+		 }
+
+		 if (isDragging) {
+			 int dx = mouseX - lastMouseX;
+			 int dy = mouseY - lastMouseY;
+			 cameraRotate.y += dx * 0.01f;
+			 cameraRotate.x += dy * 0.01f;
+			 lastMouseX = mouseX;
+			 lastMouseY = mouseY;
+		 }
+		 int mouseR = Novice::IsPressMouse(1); // 1: right button
+		 if (mouseR && !isRightDragging) {
+			 isRightDragging = true;
+			 lastMouseX = mouseX;
+			 lastMouseY = mouseY;
+		 }
+		 else if (!mouseR && isRightDragging) {
+			 isRightDragging = false;
+		 }
+		 if (isRightDragging) {
+			 int dx = mouseX - lastMouseX;
+			 int dy = mouseY - lastMouseY;
+			 cameraTranslate.x -= dx * 0.01f;
+			 cameraTranslate.y += dy * 0.01f; // Y軸は逆方向に動かす
+			 lastMouseX = mouseX;
+			 lastMouseY = mouseY;
+		 }
+
+		 int32_t color = isCollision(aabb1,line) ? RED : GREEN;
+
+		 ImGui::Begin("Window");
+		 ImGui::DragFloat3("aabb1 min", &aabb1.min.x, 0.01f);
+		 ImGui::DragFloat3("aabb1 max", &aabb1.max.x, 0.01f);
+		 ImGui::DragFloat3("line origin", &line.origin.x, 0.01f);
+		 ImGui::DragFloat3("line diff", &line.diff.x, 0.01f);
 		
 
+		 ImGui::End();
+		 aabb1.min.x = (std::min)(aabb1.min.x, aabb1.max.x);
+		 aabb1.min.y = (std::min)(aabb1.min.y, aabb1.max.y);
+		 aabb1.min.z = (std::min)(aabb1.min.z, aabb1.max.z);
+		 aabb1.max.x = (std::max)(aabb1.min.x, aabb1.max.x);
+		 aabb1.max.y = (std::max)(aabb1.min.y, aabb1.max.y);
+		 aabb1.max.z = (std::max)(aabb1.min.z, aabb1.max.z);
 
-		Novice::EndFrame();
+		 DrawGrid(viewProjectionMatrix, viewportMatrix);
+		 DrawAABB(aabb1, viewProjectionMatrix, viewportMatrix, color);
+		 DrawSegment(line, viewProjectionMatrix, viewportMatrix, WHITE);
 
-		if (preKeys[DIK_ESCAPE] == 0 && keys[DIK_ESCAPE] != 0) {
-			break;
-		}
-	}
 
-	Novice::Finalize();
-	return 0;
-}
+		 Novice::EndFrame();
+
+		 if (preKeys[DIK_ESCAPE] == 0 && keys[DIK_ESCAPE] != 0) {
+			 break;
+		 }
+	 }
+
+	 Novice::Finalize();
+	 return 0;
+ }
 
