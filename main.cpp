@@ -24,6 +24,10 @@ struct AABB {
 	Vector3 min; // 最小点
 	Vector3 max; // 最大点
 };
+struct Sphere {
+	Vector3 centre;
+	float radius;
+};
 Matrix4x4 MakePerspectiveFovMatrix(float fovY, float aspectRatio, float nearZ, float farZ) {
 	Matrix4x4 mat = {};
 	float f = 1.0f / tanf(fovY * 0.5f);
@@ -307,7 +311,51 @@ Vector3 Normalize(const Vector3& v) {
 }
 
 
+void DrawSphere(
 
+	const Sphere& sphere, const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix,
+	uint32_t color) {
+	const float pi = 3.14159265358979323846f;
+	const uint32_t kSubdivision = 12;
+	// 経度分割1つ分の角度
+	const float kLonEvery = pi * 2.0f / float(kSubdivision);
+	// 緯度分割1つ分の角度
+	const float kLatEvery = pi / float(kSubdivision);
+
+	// 緯度の方向に分割
+	for (uint32_t latIndex = 0; latIndex < kSubdivision; ++latIndex) {
+		float lat = -pi / 2.0f + kLatEvery * latIndex;
+
+		for (uint32_t lonIndex = 0; lonIndex < kSubdivision; ++lonIndex) {
+			float lon = lonIndex * kLonEvery;
+
+			Vector3 a = {
+				sphere.centre.x + sphere.radius * std::cos(lat) * std::cos(lon),
+				sphere.centre.y + sphere.radius * std::sin(lat),
+				sphere.centre.z + sphere.radius * std::cos(lat) * std::sin(lon)
+			};
+
+			Vector3 b = {
+				sphere.centre.x + sphere.radius * std::cos(lat + kLatEvery) * std::cos(lon),
+				sphere.centre.y + sphere.radius * std::sin(lat + kLatEvery),
+				sphere.centre.z + sphere.radius * std::cos(lat + kLatEvery) * std::sin(lon)
+			};
+
+			Vector3 c = {
+				sphere.centre.x + sphere.radius * std::cos(lat) * std::cos(lon + kLonEvery),
+				sphere.centre.y + sphere.radius * std::sin(lat),
+				sphere.centre.z + sphere.radius * std::cos(lat) * std::sin(lon + kLonEvery)
+			};
+
+			// 線を描く
+			Vector3 screenA = Transform(Transform(a, viewProjectionMatrix), viewportMatrix);
+			Vector3 screenB = Transform(Transform(b, viewProjectionMatrix), viewportMatrix);
+			Vector3 screenC = Transform(Transform(c, viewProjectionMatrix), viewportMatrix);
+			Novice::DrawLine(int(screenA.x), int(screenA.y), int(screenB.x), int(screenB.y), color);
+			Novice::DrawLine(int(screenA.x), int(screenA.y), int(screenC.x), int(screenC.y), color);
+		}
+	}
+}
 
  // Define Triangle and Plane types
 
@@ -324,11 +372,7 @@ Vector3 Normalize(const Vector3& v) {
  Vector3 Subtract(const Vector3& v1, const Vector3& v2) {
      return { v1.x - v2.x, v1.y - v2.y, v1.z - v2.z };
  }
- bool isCollision(const AABB& aabb1, const AABB& aabb2) {
-	 return (aabb1.min.x <= aabb2.max.x && aabb1.max.x >= aabb2.min.x) &&
-		 (aabb1.min.y <= aabb2.max.y && aabb1.max.y >= aabb2.min.y) &&
-		 (aabb1.min.z <= aabb2.max.z && aabb1.max.z >= aabb2.min.z);
- }
+
  void DrawAABB(const AABB& aabb, const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix, uint32_t color) {
      // AABBを構成する8頂点を作る
      Vector3 vertices[8] = {
@@ -340,6 +384,7 @@ Vector3 Normalize(const Vector3& v) {
          {aabb.max.x, aabb.max.y, aabb.min.z},
          {aabb.max.x, aabb.max.y, aabb.max.z},
          {aabb.max.x, aabb.min.y, aabb.max.z},
+       
      };
 
      // スクリーン座標系へ変換
@@ -372,7 +417,17 @@ Vector3 Normalize(const Vector3& v) {
          );
      }
  }
+ bool isCollision(const Sphere& sphere, const AABB& aabb) {
 
+	 bool IsCollision(const AABB & aabb, const Sphere & sphere);
+	 Vector3 closestPoint = {
+		 std::clamp(sphere.centre.x, aabb.min.x, aabb.max.x),
+		 std::clamp(sphere.centre.y, aabb.min.y, aabb.max.y),
+		 std::clamp(sphere.centre.z, aabb.min.z, aabb.max.z)
+	 };
+	 float distance = Length(sphere.centre, closestPoint);
+	 return distance <= sphere.radius;
+ }
  int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	Novice::Initialize(kWindowTitle, kWindowWidth, kWindowHeight);
 	char keys[256] = { 0 };
@@ -388,8 +443,10 @@ Vector3 Normalize(const Vector3& v) {
 
 	
 	AABB aabb1 = { {-0.5f,-0.5f,-0.5f} ,{0.0f,0.0f,0.0f} };
-	AABB aabb2 = { {0.2f,0.2f,0.2f},{1.0f,1.0f,1.0f} };
+	Vector3 center1 = { 0.0f, 0.0f, 0.0f };
+	float radius1 = 0.5f;
 
+	Sphere sphere1 = {center1,radius1 };
 
 	while (Novice::ProcessMessage() == 0) {
 		Novice::BeginFrame();
@@ -455,13 +512,13 @@ Vector3 Normalize(const Vector3& v) {
 			lastMouseY = mouseY;
 		}
 
-		int32_t color = isCollision(aabb1, aabb2) ? RED : GREEN;
+		int32_t color = isCollision(sphere1,aabb1) ? RED : GREEN;
 
 		ImGui::Begin("Window");
 		ImGui::DragFloat3("aabb1 min", &aabb1.min.x, 0.01f);
 		ImGui::DragFloat3("aabb1 max", &aabb1.max.x, 0.01f);
-		ImGui::DragFloat3("aabb2 min", &aabb2.min.x, 0.01f);
-		ImGui::DragFloat3("aabb2 max", &aabb2.max.x, 0.01f);
+		ImGui::DragFloat3("sphere1 centre", &sphere1.centre.x, 0.01f);
+		ImGui::DragFloat("sphere1 radius", &sphere1.radius, 0.01f);
 			
 		ImGui::End();
 		aabb1.min.x = (std::min)(aabb1.min.x, aabb1.max.x);
@@ -470,16 +527,10 @@ Vector3 Normalize(const Vector3& v) {
 		aabb1.max.x = (std::max)(aabb1.min.x, aabb1.max.x);
 		aabb1.max.y = (std::max)(aabb1.min.y, aabb1.max.y);
 		aabb1.max.z = (std::max)(aabb1.min.z, aabb1.max.z);
-		aabb2.min.x = (std::min)(aabb2.min.x, aabb2.max.x);
-		aabb2.min.y = (std::min)(aabb2.min.y, aabb2.max.y);
-		aabb2.min.z = (std::min)(aabb2.min.z, aabb2.max.z);
-		aabb2.max.x = (std::max)(aabb2.min.x, aabb2.max.x);
-		aabb2.max.y = (std::max)(aabb2.min.y, aabb2.max.y);
-		aabb2.max.z = (std::max)(aabb2.min.z, aabb2.max.z);
+	
 		DrawGrid(viewProjectionMatrix, viewportMatrix);
 		DrawAABB(aabb1, viewProjectionMatrix, viewportMatrix, color);
-		DrawAABB(aabb2, viewProjectionMatrix, viewportMatrix, WHITE);
-		
+		DrawSphere(sphere1, viewProjectionMatrix, viewportMatrix, WHITE);
 		
 
 
